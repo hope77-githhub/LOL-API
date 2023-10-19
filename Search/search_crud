@@ -3,7 +3,6 @@ import httpx
 from var import *
 from models import User
 from fastapi import HTTPException
-
 from starlette import status
 
 '''
