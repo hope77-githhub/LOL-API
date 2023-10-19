@@ -1,0 +1,115 @@
+import requests
+import httpx
+from var import *
+from models import User
+from fastapi import HTTPException
+
+from starlette import status
+
+'''
+mvc model 에서 controller 부분으로 구성 
+'''
+api_key = Api
+
+
+async def get_summoner_info(summoner_name: str):
+    summonerV4_url = summonerV4
+    url = f'{summonerV4_url}{summoner_name}?api_key={api_key}'
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url)
+
+        if response.status_code == 200:
+            summoner_info = response.json()
+            return summoner_info
+        else:
+            return {"error": "Failed to retrieve summoner info"}
+
+
+
+# ingame data는 puuid랑 match_type있으면 비동기로 실행가능
+async def ingame_data(puuid, match_type):
+    if match_type == '솔로랭크':
+        match_type = 420  # 솔로랭크 엔드포인트
+    else:
+        match_type = 440  # 자유랭크 엔드포인트
+
+    match_url = f'{matchnumL}{puuid}/ids?queue={match_type}&type=ranked&start=0&count=10&api_key={api_key}'
+    async with httpx.AsyncClient() as client:
+        response = await client.get(match_url)
+    if response.status_code == 200:
+        match_id = response.json()
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail = "오류가 발생했습니다.",
+        )
+
+    match_data = []
+    champid = []
+    for m in match_id:
+        base_url = f'{matchL}{m}?api_key={api_key}'
+        r = requests.get(base_url)
+        Match_Dto = r.json()
+        MetaDataDto = Match_Dto['info']
+        Participants = MetaDataDto['participants']
+
+        for participant in Participants:
+            if participant['puuid'] == puuid:
+                champname = participant['championName']
+                champid.append(participant['championId'])
+                c = f'{champ_square}{champname}.png'
+                w = participant['win']
+                k = participant['kills']
+                d = participant['deaths']
+                a = participant['assists']
+                mdtoc = participant['magicDamageDealtToChampions']
+                pdtoc = participant['physicalDamageDealtToChampions']
+                win = 'Win' if w else 'Loss'
+                # zero divisionerror
+                try:
+                    kda = (k + a) / d
+                    kda = round(kda, 2)
+                except ZeroDivisionError:
+                    kda = 999
+
+                match_data.append({
+                    'champname': champname,
+                    'champ_url': c,
+                    'Win': win,
+                    'Kills': k,
+                    'Deaths': d,
+                    'Assists': a,
+                    'Kda': kda,
+                    'PhysicalDtoC': pdtoc,
+                    'MagicDtoC': mdtoc
+                })
+    return match_data
+
+async def get_rank_data(id):
+    league = leagueV4
+    leagueV4_url = f'{league}{id}?api_key={api_key}'
+    response = requests.get(leagueV4_url)
+    summoner_rank = response.json()
+    for entry in summoner_rank:
+        rank['queue_type'] = entry["queueType"]
+        rank['tier'] = entry["tier"]
+        rank['rank'] = entry["rank"]
+        rank['leaguepoints'] = entry["leaguePoints"]
+        rank['wins'] = entry["wins"]
+        rank['losses'] = entry["losses"]
+    return rank
+
+
+
+# 데이터 로직
+def save_info(db, summoner_id, summoner_puuid, summoner_name):
+    db_user = User(id=summoner_id,
+                   puuid=summoner_puuid,
+                   name=summoner_name)
+    db.add(db_user)
+    db.commit()
+
+
+def get_existing_user(db, user_name):
+    return db.query(User).filter(User.name == user_name).first()
