@@ -1,0 +1,50 @@
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.orm import Session
+from starlette import status
+
+from database import get_db
+from var import profile
+from Search import search_crud, search_schema
+
+'''
+
+
+'''
+
+router = APIRouter(
+    prefix="/kr"
+)
+
+riot_api = ""
+
+
+@router.post("/{summoner_name}")
+async def summoner_search(summoner_name: str,
+                          _User_info: search_schema.Userinfo,
+                          db: Session = Depends(get_db)):
+    summoner_name = summoner_name
+    match_type = "솔로랭크"
+
+    user = search_crud.get_existing_user(db, summoner_name)
+
+    if user:
+        print(1)
+        id = user.id
+        puuid = user.puuid
+        basic_info = await search_crud.get_summoner_info(summoner_name)
+        rank_info = await search_crud.get_rank_data(id)
+        match_data = await search_crud.ingame_data(puuid, match_type)
+        return basic_info, rank_info, match_data
+
+    else:
+        print(2)
+        basic_info = await search_crud.get_summoner_info(summoner_name)
+        id = basic_info['id']
+        puuid = basic_info['puuid']
+        await search_crud.save_info(id, puuid, summoner_name)
+        rank_info = await search_crud.get_rank_data(id)
+        match_data = await search_crud.ingame_data(puuid, match_type)
+        return basic_info, rank_info, match_data
+
+
+
